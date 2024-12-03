@@ -29,14 +29,13 @@ __Agenda__
      
 - Break
 
-3. __Atlas GenAI__
-    - Functions & Triggers
-    - Data API & GraphQL
-    - Host
-    - Device Sync   
+3. __Atlas Vector Search__
+    - Gen AI
+    - Semantic Search
+    - RAG
      
 - __Handson__  [GitHub][3]
-    - Data API & GraphQL
+    - Vector Search
 
 [0]: https://github.com/MongoDBAtlas/lguAIAdvisor/tree/main/00.pre-work
 
@@ -44,4 +43,4 @@ __Agenda__
 
 [2]: https://github.com/MongoDBAtlas/lguAIAdvisor/tree/main/02.Index%20and%20tips
 
-[3]: https://github.com/MongoDBAtlas/lguAIAdvisor/tree/main/03.atlas-appservice
+[3]: https://github.com/MongoDBAtlas/lguAIAdvisor/tree/main/03.vector-search
