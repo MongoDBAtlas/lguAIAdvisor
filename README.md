@@ -12,7 +12,6 @@ __Agenda__
     - MongoDB & Document Model
     - MQL
     - Architecture
-    - Aggregation
  
 - __Handson__ [GitHub][1]
     - CRUD
@@ -43,6 +42,6 @@ __Agenda__
 
 [1]: https://github.com/MongoDBAtlas/lguAIAdvisor/tree/main/01.MQL
 
-[2]: https://github.com/MongoDBAtlas/lguAIAdvisor/tree/main/02.Index%20and%tips
+[2]: https://github.com/MongoDBAtlas/lguAIAdvisor/tree/main/02.Index%20and%20tips
 
 [3]: https://github.com/MongoDBAtlas/lguAIAdvisor/tree/main/03.atlas-appservice
