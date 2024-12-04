@@ -3,7 +3,9 @@
 
 # MongoDB Atlas Training for LGU plus AI Advisor
 
-### [&rarr; Semantic Search API](#Vector)
+### [&rarr; Semantic Search](#Vector)
+
+### [&rarr; Hybrid Search](#Hybrid)
 
 ### [&rarr; Semantic API Node](#API)
 
@@ -196,6 +198,298 @@ OpenAI의 API 호출 시 원한는 값을 Input에 넣어 Vector 값을 구해�
 
 [primary] sample_mflix> db.embedded_movies.aggregate([ { "$vectorSearch": { "index": "vector_index", "path": "plot_embedding", "queryVector": vector, "numCandidates": 200, "limit": 10 } }, { "$project": { "_id": 0, "title": 1, "genres": 1, "plot": 1, "released": 1, "score": { $meta: "vectorSearchScore" } } }] )
 
+
+`````
+
+
+### Hybrid
+입력한 문장을 Semantic 형태로 검색도 진행 하며 동시에 단어 검색도 진행 합니다. Vector를 이용한 검색의 결과가 충분 하지 못 할 수 있기 때문에 단어를 이용한 검색도 병행합니다. 두개 검색 결과에 대한 정렬이 필요 하기 때문에 각 검색에 대한 Score를 이용하여 정렬을 하게 됩니다.
+
+검색은 embedded_movies 컬렉션의 데이터로 plot_embedding 필드에 "ada-002-text"를 이용한 vector 데이터로 검색 하고 동시에 title 필드에 대해서 full text 검색을 진행 합니다.    
+
+Vector index는 기존에 생성 한 인덱스 "vector_index"를 이용합니다. Search를 위해 검색 인덱스를 생성 합니다.    
+
+sample_mflix.embedded_movies를 선택 후 Search Indexes에서 인덱스를 생성 합니다.   
+빠른 생성을 위해 Json 방식을 선택 합니다.   
+
+<img src="/03.vector-search/images/images51.png" width="70%" height="70%"> 
+
+다음 검색 인덱스 선언용 json 메시지를 입력 하고 인덱스의 이름을 search_index로 지정하여 줍니다.      
+title, plot, fullplot, cast 필드를 대상으로 하여 검색을 인덱스를 생성 하는 설정 입니다.   
+
+`````
+{
+  "mappings": {
+    "dynamic": false,
+    "fields": {
+      "title": [
+        {
+          "type": "string"
+        }        
+      ],
+      "plot":[
+        {
+          "type": "string"
+        }
+      ],
+      "fullplot":[
+        {
+          "type": "string"
+        }
+      ],
+      "cast":[
+        {
+          "type": "string"
+        }
+      ]
+    }
+  }
+}
+`````
+
+<img src="/03.vector-search/images/images52.png" width="70%" height="70%"> 
+
+인덱스를 저장하면 생성이 진행 됩니다.   
+
+<img src="/03.vector-search/images/images53.png" width="70%" height="70%"> 
+
+인덱스 생성이 완료 되면 검색을 위한 Query를 작성 합니다.   
+벡터 검색에 대한 가중치를 0.9로 주고 단어 검색에 0.1을 주고 실행 합니다.  
+기본 검색 Score는 BM25를 기준으로 산출이 되며 이 값을 지수 함수로 계산하고 가중치를 준것 입니다.  
+
+`````
+[primary] sample_mflix> const vectorjson = require('./hybrid.json')
+[primary] sample_mflix> let vector = vectorjson.data[0].embedding
+[primary] sample_mflix> const vectorWeight = 0.9
+[primary] sample_mflix> const fullTextWeight = 0.1
+[primary] sample_mflix> let vector = vectorjson.data[0].embedding
+
+
+[primary] sample_mflix> let hybrid = 
+[
+  {
+    "$vectorSearch": {
+      "index": "vector_index",
+      "queryVector": vector,
+      "path": "plot_embedding",
+      "numCandidates": 100,
+      "limit": 20
+    }
+  },
+  {
+    "$addFields": {
+      "vs_score": {
+        "$meta": "vectorSearchScore"
+      }
+    }
+  },
+  {
+    "$project": {
+      "title": "$title",
+      "image": "$poster",
+      "description": "$plot",
+      "cast": "$cast",
+      "genres": "$genres",
+      "vs_score": {
+        "$multiply": [
+          vectorWeight,
+          {
+            "$divide": [
+              1,
+              {
+                "$sum": [
+                  1,
+                  {
+                    "$exp": {
+                      "$multiply": [
+                        -1,
+                        "$vs_score"
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "$unionWith": {
+      "coll": "embedded_movies",
+      "pipeline": [
+        {
+          "$search": {
+            "index": "search_index",
+            "text": {
+              "query": "fighting gohosts",
+              "path": ["title","fullplot","plot","cast"]
+            }
+          }
+        },
+        {
+          "$limit": 20
+        },
+        {
+          "$addFields": {
+            "fts_score": {
+              "$meta": "searchScore"
+            }
+          }
+        },
+        {
+          "$project": {
+            "fts_score": {
+              "$multiply": [
+                fullTextWeight,
+                {
+                  "$divide": [
+                    1,
+                    {
+                      "$sum": [
+                        1,
+                        {
+                          "$exp": {
+                            "$multiply": [
+                              -1,
+                              "$fts_score"
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            "title": "$title",
+            "image": "$poster",
+            "description": "$plot",
+            "cast": "$cast",
+            "genres": "$genres"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "$group": {
+      "_id": "$_id",
+      "vs_score": {
+        "$max": "$vs_score"
+      },
+      "fts_score": {
+        "$max": "$fts_score"
+      },
+      "title": {
+        "$first": "$title"
+      },
+      "image": {
+        "$first": "$image"
+      },
+      "description": {
+        "$first": "$description"
+      },
+      "cast": {
+        "$first": "$cast"
+      },
+      "genres": {
+        "$first": "$genres"
+      }
+    }
+  },
+  {
+    "$project": {
+      "_id": 1,
+      "title": 1,
+      "image": 1,
+      "description": 1,
+      "vs_score": {
+        "$ifNull": [
+          "$vs_score",
+          0
+        ]
+      },
+      "fts_score": {
+        "$ifNull": [
+          "$fts_score",
+          0
+        ]
+      },
+      "cast": "$cast",
+      "genres": "$genres"
+    }
+  },
+  {
+    "$addFields": {
+      "score": {
+        "$add": [
+          "$fts_score",
+          "$vs_score"
+        ]
+      }
+    }
+  },
+  {
+    "$sort": {
+      "score": -1
+    }
+  },
+  {
+    "$limit": 10
+  }
+]
+
+
+[primary] sample_mflix> db.embedded_movies.aggregate(hybrid)
+
+`````
+
+검색의 결과는 다음과 같이 나오게 됩니다.   
+
+`````
+[primary] sample_mflix> db.embedded_movies.aggregate(hybrid)
+[
+  {
+    _id: ObjectId("573a139af29313caabcef0a4"),
+    title: 'Casper',
+    image: 'https://m.media-amazon.com/images/M/MV5BZThhYTlhMDUtMDhjZi00MTljLTkwMDYtOGU3ZjVlMWE4NDk4XkEyXkFqcGdeQXVyMTQxNzMzNDI@._V1_SY1000_SX677_AL_.jpg',
+    description: 'A paranormal expert and his daughter bunk in an abandoned house populated by 3 mischievous ghosts and one friendly one.',
+    vs_score: 0.6046620703731529,
+    fts_score: 0,
+    cast: [
+      'Chauncey Leopardi',
+      'Spencer Vrooman',
+      'Malachi Pearson',
+      'Cathy Moriarty'
+    ],
+    genres: [ 'Comedy', 'Family', 'Fantasy' ],
+    score: 0.6046620703731529
+  },
+  {
+    _id: ObjectId("573a13cef29313caabd880e3"),
+    title: 'Monster Brawl',
+    image: 'https://m.media-amazon.com/images/M/MV5BMTMxMTgwMTQ3Ml5BMl5BanBnXkFtZTcwMDY4OTc0NA@@._V1_SY1000_SX677_AL_.jpg',
+    description: 'Eight classic monsters fight to the death in an explosive wrestling tournament set inside an abandoned and cursed graveyard.',
+    vs_score: 0.6046583212455693,
+    fts_score: 0,
+    cast: [ 'Dave Foley', 'Art Hindle', 'Robert Maillet', 'Jimmy Hart' ],
+    genres: [ 'Action', 'Comedy', 'Horror' ],
+    score: 0.6046583212455693
+  },
+  {
+    _id: ObjectId("573a13acf29313caabd26b23"),
+    title: 'Despiser',
+    image: 'https://m.media-amazon.com/images/M/MV5BMTQ2NDg1MTkxN15BMl5BanBnXkFtZTYwODE4ODk5._V1_SY1000_SX677_AL_.jpg',
+    description: "Having just been fired and dumped by his wife, life couldn't possibly be worse for independent artist GORDON HAUGE (Mark Redfield)--until he wrecks his car and finds himself in purgatory ...",
+    vs_score: 0.604558718000763,
+    fts_score: 0,
+    cast: [ 'Mark Redfield', 'Doug Brown', 'Gage Sheridan', 'Frank Smith' ],
+    genres: [ 'Fantasy', 'Horror' ],
+    score: 0.604558718000763
+  },
+  ...
 
 `````
 
